@@ -7,7 +7,7 @@ const app=express();
 mongoose.connect(process.env.URL)
 .then(()=>{console.log("data base connected")})
 .catch((err)=>{console.log("database not connected",err)});
-
+app.use(express.json())
 const teacherRoute=require("./routers/teacherRoute");
 app.use("/teacher",teacherRoute);
 
