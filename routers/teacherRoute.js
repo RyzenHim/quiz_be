@@ -1,14 +1,12 @@
-const express =require("express")
-const route=express.Router()
+const express = require("express");
+const route = express.Router();
 
-const teacherController=require("../controllers/teacherController")
+const teacherController = require("../controllers/teacherController");
+const { authenticateTeacher } = require("../middlewares/authMiddleware");
 
-route.post("/",teacherController.teacheradd);
-route.get("/findall",teacherController.teacherall);
-route.get("/findone/:id",teacherController.teacherone);
-route.put("/update/:id",teacherController.teacherupdate);
-route.delete("/delete/:id",teacherController.teacherdelete);
-// route.delete("/softdelete/:id",teacherController.teachersoftdelete);
+route.post("/register", teacherController.registerTeacher);
+route.post("/login", teacherController.loginTeacher);
+route.get("/me", authenticateTeacher, teacherController.getTeacherProfile);
+route.get("/", teacherController.getTeachers);
 
-
-module.exports=route
+module.exports = route;

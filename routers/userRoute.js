@@ -1,10 +1,15 @@
-const express=require("express");
-const route=express.Router();
+const express = require("express");
+const route = express.Router();
 
-const userController=require("../controllers/userController");
+const userController = require("../controllers/userController");
+const { authenticateTeacher } = require("../middlewares/authMiddleware");
 
-route.post("/",userController.adduser);
-route.get("/findall",userController.alluser)
-route.get("/findone/:id",userController.oneuser)
+route.use(authenticateTeacher);
 
-module.exports=route
+route.post("/", userController.adduser);
+route.get("/", userController.alluser);
+route.get("/:id", userController.oneuser);
+route.put("/:id", userController.updateUser);
+route.delete("/soft-delete/:id", userController.softDeleteUser);
+
+module.exports = route;
