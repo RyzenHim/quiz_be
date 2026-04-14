@@ -10,6 +10,8 @@ mongoose.connect(process.env.URL)
 app.use(express.json())
 const teacherRoute=require("./routers/teacherRoute");
 app.use("/teacher",teacherRoute);
+const userRoute=require("./routers/userRoute");
+app.use("/user",userRoute);
 
 app.listen(process.env.PORT,()=>{
      console.log(`server is running on ${process.env.PORT}`)
