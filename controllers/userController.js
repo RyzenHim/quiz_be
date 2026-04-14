@@ -172,7 +172,7 @@ exports.updateUser = async (req, res) => {
     }
 
     const updatedStudent = await User.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+      returnDocument: "after",
       runValidators: true,
     }).populate("batch");
 
@@ -199,7 +199,7 @@ exports.softDeleteUser = async (req, res) => {
         isActive: false,
         deletedAt: new Date(),
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!student) {

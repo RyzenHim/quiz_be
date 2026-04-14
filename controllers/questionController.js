@@ -168,7 +168,7 @@ exports.updateQuestion = async (req, res) => {
         ...req.body,
         topicTitle,
       },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).populate("skill");
 
     return res.status(200).json({
@@ -192,7 +192,7 @@ exports.deleteQuestion = async (req, res) => {
         isDeleted: true,
         isActive: false,
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!question) {

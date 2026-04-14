@@ -67,7 +67,7 @@ exports.updateSkill = async (req, res) => {
         teacher: req.teacher._id,
       },
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     );
 
     if (!skill) {

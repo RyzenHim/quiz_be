@@ -107,7 +107,7 @@ exports.updateCourse = async (req, res) => {
         isDeleted: false,
       },
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).populate("skills");
 
     if (!course) {
@@ -136,7 +136,7 @@ exports.softDeleteCourse = async (req, res) => {
         isActive: false,
         deletedAt: new Date(),
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!course) {

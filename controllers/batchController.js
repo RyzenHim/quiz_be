@@ -109,7 +109,7 @@ exports.updateBatch = async (req, res) => {
         isDeleted: false,
       },
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     )
       .populate("courses")
       .populate("students", "-password");
@@ -140,7 +140,7 @@ exports.softDeleteBatch = async (req, res) => {
         isActive: false,
         deletedAt: new Date(),
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!batch) {

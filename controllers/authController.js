@@ -110,7 +110,7 @@ exports.updateThemePreference = async (req, res) => {
     const updatedUser = await Model.findByIdAndUpdate(
       req.authUser._id,
       { themePreference },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).select("-password");
 
     return res.status(200).json({
