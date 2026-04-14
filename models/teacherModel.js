@@ -26,6 +26,11 @@ const teacherSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    themePreference: {
+      type: String,
+      enum: ["light", "dark"],
+      default: "light",
+    },
     isActive: {
       type: Boolean,
       default: true,

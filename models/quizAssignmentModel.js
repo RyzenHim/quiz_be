@@ -16,6 +16,10 @@ const quizAssignmentSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    instructions: {
+      type: String,
+      trim: true,
+    },
     course: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Course",
@@ -32,6 +36,12 @@ const quizAssignmentSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    questions: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Question",
+      },
+    ],
     assignToAllStudents: {
       type: Boolean,
       default: false,
@@ -45,6 +55,11 @@ const quizAssignmentSchema = new mongoose.Schema(
       type: Number,
       min: 1,
       default: 100,
+    },
+    passMarks: {
+      type: Number,
+      min: 0,
+      default: 0,
     },
     startAt: {
       type: Date,

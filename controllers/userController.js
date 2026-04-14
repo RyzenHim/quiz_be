@@ -1,5 +1,7 @@
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const Batch = require("../models/batchModel");
+const QuizAssignment = require("../models/quizAssignmentModel");
 const User = require("../models/userModel");
 
 const sanitizeStudent = (student) => {
@@ -7,6 +9,17 @@ const sanitizeStudent = (student) => {
   delete studentObject.password;
   return studentObject;
 };
+
+const signStudentToken = (student) =>
+  jwt.sign(
+    {
+      studentId: student._id,
+      email: student.email,
+      role: "student",
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 
 exports.adduser = async (req, res) => {
   try {
@@ -198,6 +211,67 @@ exports.softDeleteUser = async (req, res) => {
     });
 
     return res.status(200).json({ message: "Student soft deleted successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.loginStudent = async (req, res) => {
+  try {
+    const { emailOrEnrollmentNumber, password } = req.body;
+
+    if (!emailOrEnrollmentNumber || !password) {
+      return res.status(400).json({
+        message: "emailOrEnrollmentNumber and password are required",
+      });
+    }
+
+    const student = await User.findOne({
+      $or: [
+        { email: String(emailOrEnrollmentNumber).toLowerCase() },
+        { enrollmentNumber: emailOrEnrollmentNumber },
+      ],
+      role: "student",
+      isDeleted: false,
+    }).populate("batch");
+
+    if (!student || !student.password) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    const isPasswordMatched = await bcrypt.compare(password, student.password);
+    if (!isPasswordMatched) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = signStudentToken(student);
+
+    return res.status(200).json({
+      message: "Student logged in successfully",
+      token,
+      student: sanitizeStudent(student),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getStudentProfile = async (req, res) => {
+  return res.status(200).json({ student: sanitizeStudent(req.student) });
+};
+
+exports.getAssignedQuizzes = async (req, res) => {
+  try {
+    const quizzes = await QuizAssignment.find({
+      students: req.student._id,
+      isActive: true,
+      status: { $in: ["scheduled", "published", "completed"] },
+    })
+      .populate("course")
+      .populate("batch")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({ quizzes });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
