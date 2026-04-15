@@ -12,6 +12,36 @@ const sanitizeQuestionForStudent = (question) => {
   return questionObject;
 };
 
+const buildResultQuestion = (question, answer) => {
+  const correctOptions = (question.options || []).filter((option) => option.isCorrect);
+
+  return {
+    _id: question._id,
+    questionText: question.questionText,
+    type: question.type,
+    topicTitle: question.topicTitle,
+    explanation: question.explanation || "",
+    marks: question.marks,
+    difficulty: question.difficulty,
+    skill: question.skill,
+    options: (question.options || []).map((option) => ({
+      _id: option._id,
+      text: option.text,
+      isCorrect: Boolean(option.isCorrect),
+    })),
+    submittedAnswer: {
+      selectedOptionIds: answer?.selectedOptionIds || [],
+      answerText: answer?.answerText || "",
+      isCorrect: Boolean(answer?.isCorrect),
+      obtainedMarks: answer?.obtainedMarks || 0,
+    },
+    correctAnswerText:
+      question.type === "short_answer"
+        ? question.correctAnswerText || ""
+        : correctOptions.map((option) => option.text).join(", "),
+  };
+};
+
 const evaluateAnswer = (question, submittedAnswer) => {
   if (!submittedAnswer) {
     return { isCorrect: false, obtainedMarks: 0 };
@@ -172,6 +202,53 @@ exports.getStudentQuizAttempts = async (req, res) => {
       .sort({ createdAt: -1 });
 
     return res.status(200).json({ attempts });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getStudentQuizResult = async (req, res) => {
+  try {
+    const attempt = await QuizAttempt.findOne({
+      student: req.student._id,
+      quizAssignment: req.params.id,
+    })
+      .populate({
+        path: "quizAssignment",
+        populate: [
+          { path: "course", select: "title" },
+          { path: "batch", select: "batchName" },
+          { path: "teacher", select: "name email" },
+          {
+            path: "questions",
+            populate: {
+              path: "skill",
+              select: "name",
+            },
+          },
+        ],
+      })
+      .populate("student", "name email enrollmentNumber");
+
+    if (!attempt) {
+      return res.status(404).json({ message: "Quiz result not found" });
+    }
+
+    const answerMap = new Map(attempt.answers.map((answer) => [String(answer.question), answer]));
+    const quizAssignmentObject = attempt.quizAssignment.toObject();
+    const resultQuestions = (quizAssignmentObject.questions || []).map((question) =>
+      buildResultQuestion(question, answerMap.get(String(question._id)))
+    );
+
+    return res.status(200).json({
+      attempt: {
+        ...attempt.toObject(),
+        quizAssignment: {
+          ...quizAssignmentObject,
+          questions: resultQuestions,
+        },
+      },
+    });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

@@ -1,8 +1,10 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const Batch = require("../models/batchModel");
+const PracticeAttempt = require("../models/practiceAttemptModel");
 const Question = require("../models/questionModel");
 const QuizAssignment = require("../models/quizAssignmentModel");
+const QuizAttempt = require("../models/quizAttemptModel");
 const User = require("../models/userModel");
 
 const sanitizeStudent = (student) => {
@@ -23,6 +25,23 @@ const buildStudentSort = (sortBy = "createdAt", sortOrder = "desc") => {
   return { [allowedSortFields[sortBy] || "createdAt"]: direction };
 };
 
+const normalizeAnswerText = (value = "") =>
+  String(value)
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+const shuffleItems = (items = []) => {
+  const shuffled = [...items];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+
+  return shuffled;
+};
+
 const sanitizeQuestionForStudent = (question) => {
   const questionObject = question.toObject();
   questionObject.options = (questionObject.options || []).map((option) => ({
@@ -31,6 +50,172 @@ const sanitizeQuestionForStudent = (question) => {
   }));
   delete questionObject.correctAnswerText;
   return questionObject;
+};
+
+const evaluateStudentAnswer = (question, submittedAnswer = {}) => {
+  if (question.type === "short_answer") {
+    const expected = normalizeAnswerText(question.correctAnswerText);
+    const actual = normalizeAnswerText(submittedAnswer.answerText);
+    return Boolean(expected) && expected === actual;
+  }
+
+  const correctOptionIds = (question.options || [])
+    .filter((option) => option.isCorrect)
+    .map((option) => String(option._id))
+    .sort();
+
+  const selectedOptionIds = (submittedAnswer.selectedOptionIds || [])
+    .map((optionId) => String(optionId))
+    .sort();
+
+  return (
+    correctOptionIds.length === selectedOptionIds.length &&
+    correctOptionIds.every((optionId, index) => optionId === selectedOptionIds[index])
+  );
+};
+
+const buildCorrectAnswerPayload = (question) => {
+  if (question.type === "short_answer") {
+    return {
+      correctAnswerText: question.correctAnswerText || "No correct answer available.",
+      correctOptionIds: [],
+    };
+  }
+
+  const correctOptions = (question.options || []).filter((option) => option.isCorrect);
+
+  return {
+    correctAnswerText:
+      correctOptions.map((option) => option.text).join(", ") || "No correct answer available.",
+    correctOptionIds: correctOptions.map((option) => String(option._id)),
+  };
+};
+
+const buildPracticeSummary = ({ course, skill, topic }) => {
+  if (topic && skill) {
+    return `Practice questions will be randomly selected only from the ${topic.title} topic in ${skill.name} for the ${course.title} course.`;
+  }
+
+  if (skill) {
+    return `Practice questions will be randomly selected from any topic inside the ${skill.name} skill for the ${course.title} course.`;
+  }
+
+  return `Practice questions will be randomly selected from any aligned skill and any aligned topic inside the ${course.title} course.`;
+};
+
+const resolvePracticeScope = (alignedCourses, { courseId, skillId, topicId }) => {
+  if (!courseId) {
+    return { status: 400, message: "courseId is required" };
+  }
+
+  const course = alignedCourses.find((item) => String(item._id) === String(courseId));
+
+  if (!course) {
+    return { status: 403, message: "Selected course is not available for this batch" };
+  }
+
+  const courseSkills = course.skills || [];
+  const selectedSkill = skillId
+    ? courseSkills.find((item) => String(item._id) === String(skillId))
+    : null;
+
+  if (skillId && !selectedSkill) {
+    return { status: 403, message: "Selected skill is not available for this course" };
+  }
+
+  const filteredSkills = selectedSkill ? [selectedSkill] : courseSkills;
+  const availableTopics = filteredSkills.flatMap((skill) =>
+    (skill.topics || []).map((topic) => ({
+      ...topic,
+      skillId: skill._id,
+      skillName: skill.name,
+    }))
+  );
+
+  const selectedTopic = topicId
+    ? availableTopics.find((item) => String(item._id) === String(topicId))
+    : null;
+
+  if (topicId && !selectedTopic) {
+    return { status: 403, message: "Selected topic is not available for this selection" };
+  }
+
+  const topicIds = selectedTopic
+    ? [selectedTopic._id]
+    : availableTopics.map((topic) => topic._id);
+
+  const skillIds = selectedSkill
+    ? [selectedSkill._id]
+    : filteredSkills.map((skill) => skill._id);
+
+  return {
+    course,
+    skill: selectedSkill,
+    topic: selectedTopic,
+    skillIds,
+    topicIds,
+    summary: buildPracticeSummary({
+      course,
+      skill: selectedSkill,
+      topic: selectedTopic,
+    }),
+  };
+};
+
+const loadStudentAlignedContext = async (studentId) => {
+  const student = await User.findOne({
+    _id: studentId,
+    role: "student",
+    isDeleted: false,
+  }).populate({
+    path: "batch",
+    populate: {
+      path: "courses",
+      match: {
+        isDeleted: false,
+        isActive: true,
+      },
+      populate: {
+        path: "skills",
+        match: {
+          isDeleted: false,
+          isActive: true,
+        },
+      },
+    },
+  });
+
+  if (!student?.batch) {
+    return null;
+  }
+
+  const alignedCourses = (student.batch.courses || []).map((course) => ({
+    _id: course._id,
+    title: course.title,
+    description: course.description,
+    category: course.category,
+    level: course.level,
+    code: course.code,
+    status: course.status,
+    skills: (course.skills || []).map((skill) => ({
+      _id: skill._id,
+      name: skill.name,
+      description: skill.description,
+      topics: (skill.topics || [])
+        .filter((topic) => topic.isActive !== false)
+        .map((topic) => ({
+          _id: topic._id,
+          title: topic.title,
+          description: topic.description,
+          isActive: topic.isActive !== false,
+        })),
+    })),
+  }));
+
+  return {
+    student,
+    alignedCourses,
+  };
 };
 
 const signStudentToken = (student) =>
@@ -407,46 +592,58 @@ exports.getAssignedQuizzes = async (req, res) => {
 
 exports.getStudentDashboard = async (req, res) => {
   try {
-    const student = await User.findOne({
-      _id: req.student._id,
-      role: "student",
-      isDeleted: false,
-      isActive: true,
-    }).populate({
-      path: "batch",
-      populate: {
-        path: "courses",
-        populate: {
-          path: "skills",
-        },
-      },
-    });
+    const context = await loadStudentAlignedContext(req.student._id);
 
-    if (!student) {
+    if (!context?.student) {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    const quizzes = await QuizAssignment.find({
-      students: student._id,
-      isActive: true,
-      status: { $in: ["scheduled", "published", "completed"] },
-    })
-      .populate("course")
-      .populate("batch")
-      .sort({ startAt: 1, createdAt: -1 });
+    const { student, alignedCourses } = context;
+
+    if (!student.batch) {
+      return res.status(200).json({
+        student: sanitizeStudent(student),
+        dashboard: {
+          batch: null,
+          alignedCourses: [],
+          assignedQuizCount: 0,
+          upcomingQuizCount: 0,
+          recentQuizzes: [],
+        },
+      });
+    }
+
+    const [quizzes, practiceAttempts] = await Promise.all([
+      QuizAssignment.find({
+        students: student._id,
+        isActive: true,
+        status: { $in: ["scheduled", "published", "completed"] },
+      })
+        .populate("course")
+        .populate("batch")
+        .sort({ startAt: 1, createdAt: -1 }),
+      PracticeAttempt.find({ student: student._id })
+        .populate("course", "title")
+        .populate("skill", "name")
+        .sort({ createdAt: -1 })
+        .limit(5),
+    ]);
 
     const now = new Date();
     const upcomingQuizzes = quizzes.filter((quiz) => !quiz.startAt || quiz.startAt >= now);
-    const courses = student.batch?.courses || [];
+    const correctPracticeCount = practiceAttempts.filter((attempt) => attempt.isCorrect).length;
 
     return res.status(200).json({
       student: sanitizeStudent(student),
       dashboard: {
         batch: student.batch,
-        alignedCourses: courses,
+        alignedCourses,
         assignedQuizCount: quizzes.length,
         upcomingQuizCount: upcomingQuizzes.length,
         recentQuizzes: quizzes.slice(0, 5),
+        practiceAttemptCount: practiceAttempts.length,
+        practiceCorrectCount: correctPracticeCount,
+        recentPractice: practiceAttempts,
       },
     });
   } catch (error) {
@@ -546,46 +743,17 @@ exports.changeStudentPassword = async (req, res) => {
 
 exports.getPracticeTopics = async (req, res) => {
   try {
-    const student = await User.findOne({
-      _id: req.student._id,
-      role: "student",
-      isDeleted: false,
-    }).populate({
-      path: "batch",
-      populate: {
-        path: "courses",
-        populate: {
-          path: "skills",
-        },
-      },
-    });
+    const context = await loadStudentAlignedContext(req.student._id);
 
-    if (!student?.batch) {
+    if (!context?.student?.batch) {
       return res.status(404).json({ message: "Batch not found for this student" });
     }
 
-    const courses = student.batch.courses || [];
-    const skills = courses.flatMap((course) => course.skills || []);
-    const uniqueSkills = Array.from(
-      new Map(skills.map((skill) => [String(skill._id), skill])).values()
-    );
-
-    const topics = uniqueSkills.flatMap((skill) =>
-      (skill.topics || []).map((topic) => ({
-        _id: topic._id,
-        title: topic.title,
-        description: topic.description,
-        skill: {
-          _id: skill._id,
-          name: skill.name,
-        },
-      }))
-    );
+    const { student, alignedCourses } = context;
 
     return res.status(200).json({
       batch: student.batch,
-      courses,
-      topics,
+      alignedCourses,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -594,56 +762,202 @@ exports.getPracticeTopics = async (req, res) => {
 
 exports.getPracticeQuestions = async (req, res) => {
   try {
-    const { topicId, skillId } = req.query;
+    const { courseId, skillId, topicId } = req.query;
 
-    if (!topicId) {
-      return res.status(400).json({ message: "topicId is required" });
-    }
+    const context = await loadStudentAlignedContext(req.student._id);
 
-    const student = await User.findOne({
-      _id: req.student._id,
-      role: "student",
-      isDeleted: false,
-    }).populate({
-      path: "batch",
-      populate: {
-        path: "courses",
-        populate: {
-          path: "skills",
-        },
-      },
-    });
-
-    if (!student?.batch) {
+    if (!context?.student?.batch) {
       return res.status(404).json({ message: "Batch not found for this student" });
     }
 
-    const alignedSkills = Array.from(
-      new Map(
-        (student.batch.courses || [])
-          .flatMap((course) => course.skills || [])
-          .map((skill) => [String(skill._id), skill])
-      ).values()
-    );
+    const scope = resolvePracticeScope(context.alignedCourses, {
+      courseId,
+      skillId,
+      topicId,
+    });
 
-    const alignedSkillIds = alignedSkills.map((skill) => skill._id);
-
-    if (skillId && !alignedSkillIds.some((id) => String(id) === String(skillId))) {
-      return res.status(403).json({ message: "Selected skill is not available for this batch" });
+    if (scope.message) {
+      return res.status(scope.status).json({ message: scope.message });
     }
 
     const filter = {
-      teacher: req.student.teacher,
-      skill: skillId || { $in: alignedSkillIds },
-      topicId,
+      teacher: context.student.teacher,
+      skill: { $in: scope.skillIds },
+      topicId: { $in: scope.topicIds },
       isDeleted: false,
       isActive: true,
     };
 
-    const questions = await Question.find(filter).populate("skill").sort({ createdAt: -1 });
+    const questions = shuffleItems(await Question.find(filter).populate("skill"));
 
     return res.status(200).json({
       questions: questions.map((question) => sanitizeQuestionForStudent(question)),
+      scope: {
+        course: scope.course,
+        skill: scope.skill,
+        topic: scope.topic,
+        summary: scope.summary,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.evaluatePracticeQuestion = async (req, res) => {
+  try {
+    const { courseId, skillId, topicId, questionId, selectedOptionIds = [], answerText = "" } =
+      req.body;
+
+    if (!courseId || !questionId) {
+      return res.status(400).json({ message: "courseId and questionId are required" });
+    }
+
+    const context = await loadStudentAlignedContext(req.student._id);
+
+    if (!context?.student?.batch) {
+      return res.status(404).json({ message: "Batch not found for this student" });
+    }
+
+    const scope = resolvePracticeScope(context.alignedCourses, {
+      courseId,
+      skillId,
+      topicId,
+    });
+
+    if (scope.message) {
+      return res.status(scope.status).json({ message: scope.message });
+    }
+
+    const question = await Question.findOne({
+      _id: questionId,
+      teacher: context.student.teacher,
+      skill: { $in: scope.skillIds },
+      topicId: { $in: scope.topicIds },
+      isDeleted: false,
+      isActive: true,
+    }).populate("skill");
+
+    if (!question) {
+      return res.status(404).json({ message: "Question not found for this practice selection" });
+    }
+
+    const isCorrect = evaluateStudentAnswer(question, {
+      selectedOptionIds,
+      answerText,
+    });
+
+    const correctAnswer = buildCorrectAnswerPayload(question);
+
+    await PracticeAttempt.create({
+      teacher: context.student.teacher,
+      student: req.student._id,
+      course: scope.course._id,
+      skill: scope.skill?._id || question.skill?._id || null,
+      topicId: scope.topic?._id || question.topicId || null,
+      topicTitle: question.topicTitle || scope.topic?.title || "",
+      question: question._id,
+      questionText: question.questionText,
+      selectedOptionIds,
+      answerText,
+      isCorrect,
+      explanation: question.explanation || "",
+      submittedAt: new Date(),
+    });
+
+    return res.status(200).json({
+      questionId: question._id,
+      isCorrect,
+      explanation: question.explanation || "",
+      ...correctAnswer,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getPracticeHistory = async (req, res) => {
+  try {
+    const attempts = await PracticeAttempt.find({ student: req.student._id })
+      .populate("course", "title")
+      .populate("skill", "name")
+      .sort({ createdAt: -1 })
+      .limit(100);
+
+    const totalAttempts = attempts.length;
+    const correctAttempts = attempts.filter((attempt) => attempt.isCorrect).length;
+    const accuracy =
+      totalAttempts > 0 ? Number(((correctAttempts / totalAttempts) * 100).toFixed(2)) : 0;
+
+    const topicPerformance = Array.from(
+      attempts.reduce((accumulator, attempt) => {
+        const key = attempt.topicTitle || "Unspecified topic";
+        const entry = accumulator.get(key) || {
+          topicTitle: key,
+          attempts: 0,
+          correct: 0,
+        };
+        entry.attempts += 1;
+        if (attempt.isCorrect) {
+          entry.correct += 1;
+        }
+        accumulator.set(key, entry);
+        return accumulator;
+      }, new Map()).values()
+    )
+      .map((entry) => ({
+        ...entry,
+        accuracy: entry.attempts > 0 ? Number(((entry.correct / entry.attempts) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.attempts - a.attempts)
+      .slice(0, 8);
+
+    return res.status(200).json({
+      attempts,
+      summary: {
+        totalAttempts,
+        correctAttempts,
+        incorrectAttempts: totalAttempts - correctAttempts,
+        accuracy,
+        topicPerformance,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getStudentResultOverview = async (req, res) => {
+  try {
+    const attempts = await QuizAttempt.find({ student: req.student._id })
+      .populate({
+        path: "quizAssignment",
+        populate: [
+          { path: "course", select: "title" },
+          { path: "batch", select: "batchName" },
+        ],
+      })
+      .sort({ createdAt: -1 });
+
+    const totalAttempts = attempts.length;
+    const passedAttempts = attempts.filter((attempt) => attempt.isPassed).length;
+    const averagePercentage =
+      totalAttempts > 0
+        ? Number(
+            (
+              attempts.reduce((sum, attempt) => sum + (attempt.percentage || 0), 0) / totalAttempts
+            ).toFixed(2)
+          )
+        : 0;
+
+    return res.status(200).json({
+      attempts,
+      summary: {
+        totalAttempts,
+        passedAttempts,
+        failedAttempts: totalAttempts - passedAttempts,
+        averagePercentage,
+      },
     });
   } catch (error) {
     return res.status(500).json({ message: error.message });
