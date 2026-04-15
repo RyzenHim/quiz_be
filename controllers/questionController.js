@@ -8,9 +8,17 @@ const validateQuestionPayload = (type, options, correctAnswerText) => {
       throw new Error("At least two options are required for objective questions");
     }
 
+    if (type === "mcq" && options.length !== 4) {
+      throw new Error("MCQ questions must have exactly four options");
+    }
+
+    if (type === "true_false" && options.length !== 2) {
+      throw new Error("True/false questions must have exactly two options");
+    }
+
     const correctOptions = options.filter((option) => option.isCorrect);
-    if (correctOptions.length === 0) {
-      throw new Error("At least one correct option is required");
+    if (correctOptions.length !== 1) {
+      throw new Error("Exactly one correct option is required");
     }
   }
 
@@ -501,7 +509,7 @@ exports.downloadQuestionTemplate = async (req, res) => {
       {
         questionText: "What is 2 + 2?",
         type: "mcq",
-        options: "3|false, 4|true, 5|false",
+        options: "1|false, 2|false, 3|false, 4|true",
         correctAnswerText: "",
         marks: 1,
         difficulty: "easy",
