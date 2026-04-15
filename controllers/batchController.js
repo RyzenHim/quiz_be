@@ -63,10 +63,20 @@ exports.createBatch = async (req, res) => {
 
 exports.getBatches = async (req, res) => {
   try {
-    const batches = await Batch.find({
+    const filter = {
       teacher: req.teacher._id,
-      isDeleted: false,
-    })
+      isDeleted: req.query.deleted === "true",
+    };
+
+    if (req.query.courseId) {
+      filter.courses = req.query.courseId;
+    }
+
+    if (req.query.search) {
+      filter.batchName = new RegExp(req.query.search.trim(), "i");
+    }
+
+    const batches = await Batch.find(filter)
       .populate("courses")
       .populate("students", "-password");
 

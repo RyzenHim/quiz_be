@@ -67,7 +67,7 @@ exports.getCourses = async (req, res) => {
   try {
     const courses = await Course.find({
       teacher: req.teacher._id,
-      isDeleted: false,
+      isDeleted: req.query.deleted === "true",
     }).populate("skills");
 
     return res.status(200).json({ courses });

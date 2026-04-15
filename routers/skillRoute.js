@@ -10,6 +10,7 @@ route.post("/", skillController.createSkill);
 route.get("/", skillController.getSkills);
 route.get("/:id", skillController.getSkillById);
 route.put("/:id", skillController.updateSkill);
-route.delete("/:id", skillController.deleteSkill);
+route.delete("/soft-delete/:id", skillController.softDeleteSkill);
+route.delete("/hard-delete/:id", skillController.hardDeleteSkill);
 
 module.exports = route;

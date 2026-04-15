@@ -35,7 +35,10 @@ exports.createSkill = async (req, res) => {
 
 exports.getSkills = async (req, res) => {
   try {
-    const skills = await Skill.find({ teacher: req.teacher._id }).sort({ createdAt: -1 });
+    const skills = await Skill.find({
+      teacher: req.teacher._id,
+      isDeleted: req.query.deleted === "true",
+    }).sort({ createdAt: -1 });
     return res.status(200).json({ skills });
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -47,6 +50,7 @@ exports.getSkillById = async (req, res) => {
     const skill = await Skill.findOne({
       _id: req.params.id,
       teacher: req.teacher._id,
+      isDeleted: false,
     });
 
     if (!skill) {
@@ -65,6 +69,7 @@ exports.updateSkill = async (req, res) => {
       {
         _id: req.params.id,
         teacher: req.teacher._id,
+        isDeleted: false,
       },
       req.body,
       { returnDocument: "after", runValidators: true }
@@ -83,7 +88,33 @@ exports.updateSkill = async (req, res) => {
   }
 };
 
-exports.deleteSkill = async (req, res) => {
+exports.softDeleteSkill = async (req, res) => {
+  try {
+    const skill = await Skill.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        teacher: req.teacher._id,
+        isDeleted: false,
+      },
+      {
+        isDeleted: true,
+        isActive: false,
+        deletedAt: new Date(),
+      },
+      { returnDocument: "after" }
+    );
+
+    if (!skill) {
+      return res.status(404).json({ message: "Skill not found" });
+    }
+
+    return res.status(200).json({ message: "Skill deleted successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.hardDeleteSkill = async (req, res) => {
   try {
     const skill = await Skill.findOneAndDelete({
       _id: req.params.id,
@@ -94,7 +125,7 @@ exports.deleteSkill = async (req, res) => {
       return res.status(404).json({ message: "Skill not found" });
     }
 
-    return res.status(200).json({ message: "Skill deleted successfully" });
+    return res.status(200).json({ message: "Skill permanently deleted successfully" });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }

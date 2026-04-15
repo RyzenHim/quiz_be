@@ -184,6 +184,9 @@ exports.getStudentQuizAssignmentForAttempt = async (req, res) => {
       isActive: true,
     })
       .populate("course")
+      .populate("batch")
+      .populate("teacher", "name email")
+      .populate("students", "name email enrollmentNumber")
       .populate("questions");
 
     if (!quizAssignment) {

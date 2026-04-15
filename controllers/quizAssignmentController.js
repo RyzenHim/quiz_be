@@ -162,6 +162,7 @@ exports.getQuizAssignments = async (req, res) => {
   try {
     const quizAssignments = await QuizAssignment.find({
       teacher: req.teacher._id,
+      isDeleted: req.query.deleted === "true",
     })
       .populate("course")
       .populate("batch")
@@ -183,6 +184,7 @@ exports.getQuizAssignmentById = async (req, res) => {
     const quizAssignment = await QuizAssignment.findOne({
       _id: req.params.id,
       teacher: req.teacher._id,
+      isDeleted: false,
     })
       .populate("course")
       .populate("batch")
@@ -197,6 +199,143 @@ exports.getQuizAssignmentById = async (req, res) => {
     }
 
     return res.status(200).json({ quizAssignment });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateQuizAssignment = async (req, res) => {
+  try {
+    const existingQuiz = await QuizAssignment.findOne({
+      _id: req.params.id,
+      teacher: req.teacher._id,
+      isDeleted: false,
+    });
+
+    if (!existingQuiz) {
+      return res.status(404).json({ message: "Quiz assignment not found" });
+    }
+
+    const nextCourseId = req.body.course || existingQuiz.course;
+    const nextBatchId = req.body.batch || existingQuiz.batch;
+    const nextAssignToAllStudents =
+      typeof req.body.assignToAllStudents === "boolean"
+        ? req.body.assignToAllStudents
+        : existingQuiz.assignToAllStudents;
+    const nextStudentIds = req.body.studentIds || existingQuiz.students;
+    const nextQuestionIds = req.body.questionIds || existingQuiz.questions;
+
+    const course = await Course.findOne({
+      _id: nextCourseId,
+      teacher: req.teacher._id,
+      isDeleted: false,
+    });
+
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    const batch = await Batch.findOne({
+      _id: nextBatchId,
+      teacher: req.teacher._id,
+      isDeleted: false,
+    });
+
+    if (!batch) {
+      return res.status(404).json({ message: "Batch not found" });
+    }
+
+    const batchHasCourse = batch.courses.some((courseRef) => String(courseRef) === String(nextCourseId));
+    if (!batchHasCourse) {
+      return res.status(400).json({
+        message: "Selected batch is not aligned with the selected course",
+      });
+    }
+
+    const students = await getValidatedStudents({
+      teacherId: req.teacher._id,
+      batch,
+      studentIds: nextStudentIds,
+      assignToAllStudents: nextAssignToAllStudents,
+    });
+
+    const questions = await validateQuestionIds({
+      teacherId: req.teacher._id,
+      questionIds: nextQuestionIds,
+      course,
+    });
+
+    const computedTotalMarks = questions.reduce((sum, question) => sum + question.marks, 0);
+
+    const quizAssignment = await QuizAssignment.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        teacher: req.teacher._id,
+        isDeleted: false,
+      },
+      {
+        ...req.body,
+        students,
+        questions: questions.map((question) => question._id),
+        totalMarks: req.body.totalMarks || computedTotalMarks,
+      },
+      { returnDocument: "after", runValidators: true }
+    )
+      .populate("course")
+      .populate("batch")
+      .populate("students", "-password")
+      .populate({
+        path: "questions",
+        populate: { path: "skill" },
+      });
+
+    return res.status(200).json({
+      message: "Quiz assignment updated successfully",
+      quizAssignment,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.softDeleteQuizAssignment = async (req, res) => {
+  try {
+    const quizAssignment = await QuizAssignment.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        teacher: req.teacher._id,
+        isDeleted: false,
+      },
+      {
+        isDeleted: true,
+        isActive: false,
+        deletedAt: new Date(),
+      },
+      { returnDocument: "after" }
+    );
+
+    if (!quizAssignment) {
+      return res.status(404).json({ message: "Quiz assignment not found" });
+    }
+
+    return res.status(200).json({ message: "Quiz assignment deleted successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+exports.hardDeleteQuizAssignment = async (req, res) => {
+  try {
+    const quizAssignment = await QuizAssignment.findOneAndDelete({
+      _id: req.params.id,
+      teacher: req.teacher._id,
+    });
+
+    if (!quizAssignment) {
+      return res.status(404).json({ message: "Quiz assignment not found" });
+    }
+
+    return res.status(200).json({ message: "Quiz assignment permanently deleted successfully" });
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
