@@ -14,8 +14,12 @@ mongoose
   .catch((err) => {
     console.log("database not connected", err);
   });
-
-app.use(cors());
+app.use(
+  cors({
+    origin: ["https://quiz-fe-liard-ten.vercel.app", "http://localhost:3000"],
+    credentials: true,
+  }),
+);
 app.use(express.json());
 
 const authRoute = require("./routers/authRoute");
