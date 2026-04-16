@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const Batch = require("../models/batchModel");
 const PracticeAttempt = require("../models/practiceAttemptModel");
@@ -230,12 +231,26 @@ const signStudentToken = (student) =>
     { expiresIn: "7d" }
   );
 
+const generateRandomPassword = (length = 12) => {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+  const bytes = crypto.randomBytes(length * 2);
+  let password = "";
+
+  for (const byte of bytes) {
+    password += alphabet[byte % alphabet.length];
+    if (password.length === length) {
+      break;
+    }
+  }
+
+  return password;
+};
+
 exports.adduser = async (req, res) => {
   try {
     const {
       name,
       email,
-      password,
       batch: batchId,
       enrollmentNumber,
       phone,
@@ -271,7 +286,8 @@ exports.adduser = async (req, res) => {
       });
     }
 
-    const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
+    const generatedPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
 
     const student = await User.create({
       name,
@@ -298,17 +314,26 @@ exports.adduser = async (req, res) => {
 
     const studentMailSent = await sendStudentWelcomeMail({
       student: populatedStudent,
-      plainPassword: password,
+      plainPassword: generatedPassword,
     }).catch((error) => {
       console.error("Student welcome mail failed:", error.message);
       return false;
     });
 
+    if (!studentMailSent) {
+      await User.findByIdAndDelete(student._id);
+      await Batch.findByIdAndUpdate(batchId, {
+        $pull: { students: student._id },
+      });
+
+      return res.status(500).json({
+        message: "Student account could not be created because the password email was not sent",
+      });
+    }
+
     return res.status(201).json({
-      message: studentMailSent
-        ? "Student created successfully and welcome mail sent"
-        : "Student created successfully, but welcome mail was not sent",
-      mailSent: studentMailSent,
+      message: "Student created successfully and welcome mail sent",
+      mailSent: true,
       student: sanitizeStudent(populatedStudent),
     });
   } catch (error) {
