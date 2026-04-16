@@ -42,6 +42,12 @@ const teacherSchema = new mongoose.Schema(
     lastLoginAt: {
       type: Date,
     },
+    passwordResetOtpHash: {
+      type: String,
+    },
+    passwordResetOtpExpiresAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

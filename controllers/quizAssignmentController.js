@@ -27,7 +27,7 @@ const getValidatedStudents = async ({ teacherId, batch, studentIds, assignToAllS
   return students.map((student) => student._id);
 };
 
-const validateQuestionIds = async ({ teacherId, questionIds, course }) => {
+const validateQuestionIds = async ({ teacherId, questionIds }) => {
   if (!Array.isArray(questionIds) || questionIds.length === 0) {
     throw new Error("At least one question must be selected for a quiz assignment");
   }
@@ -40,15 +40,6 @@ const validateQuestionIds = async ({ teacherId, questionIds, course }) => {
 
   if (questions.length !== questionIds.length) {
     throw new Error("One or more selected questions are invalid");
-  }
-
-  const courseSkillIds = course.skills.map((skillId) => String(skillId));
-  const invalidQuestion = questions.find(
-    (question) => !courseSkillIds.includes(String(question.skill))
-  );
-
-  if (invalidQuestion) {
-    throw new Error("Selected questions must belong to a skill aligned with the course");
   }
 
   return questions;
@@ -117,7 +108,6 @@ exports.createQuizAssignment = async (req, res) => {
     const questions = await validateQuestionIds({
       teacherId: req.teacher._id,
       questionIds,
-      course,
     });
 
     const computedTotalMarks = questions.reduce((sum, question) => sum + question.marks, 0);
@@ -262,7 +252,6 @@ exports.updateQuizAssignment = async (req, res) => {
     const questions = await validateQuestionIds({
       teacherId: req.teacher._id,
       questionIds: nextQuestionIds,
-      course,
     });
 
     const computedTotalMarks = questions.reduce((sum, question) => sum + question.marks, 0);

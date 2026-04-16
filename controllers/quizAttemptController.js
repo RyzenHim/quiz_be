@@ -12,6 +12,12 @@ const sanitizeQuestionForStudent = (question) => {
   return questionObject;
 };
 
+const isStudentAssignedToQuiz = (quizAssignment, studentId) =>
+  (quizAssignment.students || []).some((student) => {
+    const assignedStudentId = student?._id || student;
+    return String(assignedStudentId) === String(studentId);
+  });
+
 const buildResultQuestion = (question, answer) => {
   const correctOptions = (question.options || []).filter((option) => option.isCorrect);
 
@@ -93,9 +99,7 @@ exports.submitQuizAttempt = async (req, res) => {
       return res.status(404).json({ message: "Quiz assignment not found" });
     }
 
-    const studentAssigned = quizAssignment.students.some(
-      (studentId) => String(studentId) === String(req.student._id)
-    );
+    const studentAssigned = isStudentAssignedToQuiz(quizAssignment, req.student._id);
 
     if (!studentAssigned) {
       return res.status(403).json({ message: "Quiz is not assigned to this student" });
@@ -270,9 +274,7 @@ exports.getStudentQuizAssignmentForAttempt = async (req, res) => {
       return res.status(404).json({ message: "Quiz assignment not found" });
     }
 
-    const studentAssigned = quizAssignment.students.some(
-      (studentId) => String(studentId) === String(req.student._id)
-    );
+    const studentAssigned = isStudentAssignedToQuiz(quizAssignment, req.student._id);
 
     if (!studentAssigned) {
       return res.status(403).json({ message: "Quiz is not assigned to this student" });

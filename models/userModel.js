@@ -72,6 +72,12 @@ const userSchema = new mongoose.Schema(
     deletedAt: {
       type: Date,
     },
+    passwordResetOtpHash: {
+      type: String,
+    },
+    passwordResetOtpExpiresAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

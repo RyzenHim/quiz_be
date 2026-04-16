@@ -6,6 +6,7 @@ const Question = require("../models/questionModel");
 const QuizAssignment = require("../models/quizAssignmentModel");
 const QuizAttempt = require("../models/quizAttemptModel");
 const User = require("../models/userModel");
+const { sendStudentWelcomeMail } = require("../utils/mailService");
 
 const sanitizeStudent = (student) => {
   const studentObject = student.toObject();
@@ -295,8 +296,19 @@ exports.adduser = async (req, res) => {
       .populate("teacher", "-password")
       .populate("batch");
 
+    const studentMailSent = await sendStudentWelcomeMail({
+      student: populatedStudent,
+      plainPassword: password,
+    }).catch((error) => {
+      console.error("Student welcome mail failed:", error.message);
+      return false;
+    });
+
     return res.status(201).json({
-      message: "Student created successfully",
+      message: studentMailSent
+        ? "Student created successfully and welcome mail sent"
+        : "Student created successfully, but welcome mail was not sent",
+      mailSent: studentMailSent,
       student: sanitizeStudent(populatedStudent),
     });
   } catch (error) {
