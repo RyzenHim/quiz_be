@@ -7,7 +7,7 @@ const Question = require("../models/questionModel");
 const QuizAssignment = require("../models/quizAssignmentModel");
 const QuizAttempt = require("../models/quizAttemptModel");
 const User = require("../models/userModel");
-const { sendStudentWelcomeMail } = require("../utils/mailService");
+const { isMailConfigured, sendStudentWelcomeMail } = require("../utils/mailService");
 
 const sanitizeStudent = (student) => {
   const studentObject = student.toObject();
@@ -251,6 +251,7 @@ exports.adduser = async (req, res) => {
     const {
       name,
       email,
+      passwordMode = "email_random",
       batch: batchId,
       enrollmentNumber,
       phone,
@@ -286,8 +287,16 @@ exports.adduser = async (req, res) => {
       });
     }
 
-    const generatedPassword = generateRandomPassword();
-    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+    const normalizedPasswordMode =
+      passwordMode === "teacher_set" ? "manual_random" : passwordMode;
+
+    if (!["email_random", "manual_random"].includes(normalizedPasswordMode)) {
+      return res.status(400).json({
+        message: "passwordMode must be either email_random or manual_random",
+      });
+    }
+    const plainPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const student = await User.create({
       name,
@@ -312,28 +321,40 @@ exports.adduser = async (req, res) => {
       .populate("teacher", "-password")
       .populate("batch");
 
-    const studentMailSent = await sendStudentWelcomeMail({
-      student: populatedStudent,
-      plainPassword: generatedPassword,
-    }).catch((error) => {
-      console.error("Student welcome mail failed:", error.message);
-      return false;
-    });
+    let studentMailSent = false;
 
-    if (!studentMailSent) {
-      await User.findByIdAndDelete(student._id);
-      await Batch.findByIdAndUpdate(batchId, {
-        $pull: { students: student._id },
-      });
+    if (normalizedPasswordMode === "email_random") {
+      if (isMailConfigured()) {
+        studentMailSent = await sendStudentWelcomeMail({
+          student: populatedStudent,
+          plainPassword,
+        }).catch((error) => {
+          console.error("Student welcome mail failed:", error.message);
+          return false;
+        });
+      }
 
-      return res.status(500).json({
-        message: "Student account could not be created because the password email was not sent",
-      });
+      if (!studentMailSent) {
+        await User.findByIdAndDelete(student._id);
+        await Batch.findByIdAndUpdate(batchId, {
+          $pull: { students: student._id },
+        });
+
+        return res.status(500).json({
+          message:
+            "Student account could not be created because the random password email was not sent",
+        });
+      }
     }
 
     return res.status(201).json({
-      message: "Student created successfully and welcome mail sent",
-      mailSent: true,
+      message:
+        normalizedPasswordMode === "email_random"
+          ? "Student created successfully and welcome mail sent"
+          : "Student created successfully and a random password is ready for manual sharing",
+      mailSent: studentMailSent,
+      temporaryPassword:
+        normalizedPasswordMode === "manual_random" ? plainPassword : undefined,
       student: sanitizeStudent(populatedStudent),
     });
   } catch (error) {

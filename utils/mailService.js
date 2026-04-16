@@ -26,8 +26,12 @@ const getTransporter = () => {
   return transporter;
 };
 
+const isMailConfigured = () => Boolean(process.env.SENT_EMAIL && process.env.SENT_PASS);
+
+exports.isMailConfigured = isMailConfigured;
+
 exports.sendLoginNotification = async ({ email, name, role }) => {
-  if (!process.env.SENT_EMAIL || !process.env.SENT_PASS || !email) {
+  if (!isMailConfigured() || !email) {
     return;
   }
 
@@ -42,7 +46,7 @@ exports.sendLoginNotification = async ({ email, name, role }) => {
 };
 
 exports.sendPasswordResetOtp = async ({ email, name, otp }) => {
-  if (!process.env.SENT_EMAIL || !process.env.SENT_PASS || !email || !otp) {
+  if (!isMailConfigured() || !email || !otp) {
     return;
   }
 
@@ -57,7 +61,7 @@ exports.sendPasswordResetOtp = async ({ email, name, otp }) => {
 };
 
 exports.sendStudentWelcomeMail = async ({ student, plainPassword }) => {
-  if (!process.env.SENT_EMAIL || !process.env.SENT_PASS || !student?.email) {
+  if (!isMailConfigured() || !student?.email) {
     return false;
   }
 
