@@ -16,10 +16,15 @@ mongoose
   });
 app.use(
   cors({
-    origin: ["https://quiz-fe-liard-ten.vercel.app", "http://localhost:3000"],
+    origin: [
+      "https://quiz-fe-liard-ten.vercel.app",
+      "https://quiz-nuytcnaj7-ryzenhims-projects.vercel.app",
+      "http://localhost:3000",
+    ],
     credentials: true,
   }),
 );
+
 app.use(express.json());
 
 const authRoute = require("./routers/authRoute");
